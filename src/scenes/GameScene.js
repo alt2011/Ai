@@ -6,9 +6,11 @@ export default class GameScene extends Phaser.Scene {
         this.players = {}; // { playerId: playerObject }
         this.playerId = null;
         this.role = null; // 'killer' or 'survivor'
+        this.survivorClass = null; // 'shedletsky', 'elliot', or 'noob'
         this.killerAssigned = false; // Ensure only 1 killer per round
         this.survivorCount = 0; // Track number of survivors
         this.maxSurvivors = 8; // Maximum 8 survivors per round
+        this.survivorCounts = { 'shedletsky': 0, 'elliot': 0, 'noob': 0 }; // Track each survivor type
     }
 
     preload() {
@@ -71,8 +73,19 @@ export default class GameScene extends Phaser.Scene {
             // Add survivor only if we haven't reached max survivors (8)
             this.role = 'survivor';
             this.survivorCount++;
-            const survivorColor = 0x00ff00; // Green
-            this.player.setFillStyle(survivorColor);
+            
+            // Assign survivor class randomly: Shedletsky, Elliot, or Noob
+            const classes = ['shedletsky', 'elliot', 'noob'];
+            this.survivorClass = classes[Math.floor(Math.random() * classes.length)];
+            this.survivorCounts[this.survivorClass]++;
+            
+            // Different colors for each survivor class
+            const classColors = {
+                'shedletsky': 0x00ff00,  // Green
+                'elliot': 0x00aaff,     // Light blue
+                'noob': 0xffaa00        // Orange
+            };
+            this.player.setFillStyle(classColors[this.survivorClass]);
         } else {
             // Game is full: 1 killer + 8 survivors
             this.role = null;
@@ -81,7 +94,9 @@ export default class GameScene extends Phaser.Scene {
             return;
         }
         
-        document.getElementById('playerRole').textContent = this.role ? this.role.toUpperCase() : 'FULL';
+        const displayRole = this.role === 'killer' ? 'KILLER' : 
+                           this.role === 'survivor' ? this.survivorClass.toUpperCase() : 'FULL';
+        document.getElementById('playerRole').textContent = displayRole;
         document.getElementById('playerCount').textContent = `${this.survivorCount + (this.killerAssigned ? 1 : 0)}/${this.maxSurvivors + 1}`;
     }
 
@@ -116,11 +131,21 @@ export default class GameScene extends Phaser.Scene {
         this.player.body.setVelocity(velocityX, velocityY);
     }
 
-    // Method to assign killer role from server during multiplayer
-    assignRole(role) {
+    // Method to assign role from server during multiplayer
+    assignRole(role, survivorClass = null) {
         this.role = role;
-        const roleColor = role === 'killer' ? 0xff0000 : 0x00ff00;
-        this.player.setFillStyle(roleColor);
-        document.getElementById('playerRole').textContent = role.toUpperCase();
+        if (role === 'killer') {
+            this.player.setFillStyle(0xff0000);
+            document.getElementById('playerRole').textContent = 'KILLER';
+        } else {
+            this.survivorClass = survivorClass;
+            const classColors = {
+                'shedletsky': 0x00ff00,  // Green
+                'elliot': 0x00aaff,     // Light blue
+                'noob': 0xffaa00        // Orange
+            };
+            this.player.setFillStyle(classColors[survivorClass]);
+            document.getElementById('playerRole').textContent = survivorClass.toUpperCase();
+        }
     }
 }
