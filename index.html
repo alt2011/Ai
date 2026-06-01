@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forsaken - Browser Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #fff;
+        }
+        #game {
+            border: 2px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .role {
+            color: #00ff00;
+            font-weight: bold;
+        }
+        .killer {
+            color: #ff0000;
+        }
+        .survivor {
+            color: #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>Role: <span class="role" id="playerRole">Loading...</span></div>
+        <div>Players: <span id="playerCount">0/5</span></div>
+        <div>Status: <span id="gameStatus">Waiting...</span></div>
+    </div>
+    <script src="./src/index.js"></script>
+</body>
+</html>
