@@ -1,0 +1,26 @@
+{
+  "name": "forsaken-game",
+  "version": "0.1.0",
+  "description": "2D browser-based asymmetrical multiplayer game",
+  "main": "index.js",
+  "scripts": {
+    "start": "parcel index.html",
+    "build": "parcel build index.html",
+    "dev": "parcel index.html --port 8000"
+  },
+  "dependencies": {
+    "phaser": "^3.55.2",
+    "socket.io-client": "^4.5.4"
+  },
+  "devDependencies": {
+    "parcel": "^2.9.3"
+  },
+  "keywords": [
+    "game",
+    "phaser",
+    "multiplayer",
+    "forsaken"
+  ],
+  "author": "alt2011",
+  "license": "MIT"
+}
