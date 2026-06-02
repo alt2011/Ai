@@ -7,10 +7,13 @@ export default class GameScene extends Phaser.Scene {
         this.playerId = null;
         this.role = null; // 'killer' or 'survivor'
         this.survivorClass = null; // 'shedletsky', 'elliot', or 'noob'
+        this.killerClass = null; // Selected killer name
         this.killerAssigned = false; // Ensure only 1 killer per round
         this.survivorCount = 0; // Track number of survivors
         this.maxSurvivors = 8; // Maximum 8 survivors per round
         this.survivorCounts = { 'shedletsky': 0, 'elliot': 0, 'noob': 0 }; // Track each survivor type
+        this.killerClasses = ['Slasher', 'C00lkidd', 'John Doe', 'Noli', '1x1x1x1', 'Guest666', 'Nosferatu']; // 7 selectable killers
+        this.showKillerSelection = false; // Flag to show killer selection UI
     }
 
     preload() {
@@ -36,7 +39,7 @@ export default class GameScene extends Phaser.Scene {
 
     update() {
         // Game loop - update player positions, handle input, etc.
-        if (this.player) {
+        if (this.player && !this.showKillerSelection) {
             this.handleMovement();
         }
     }
@@ -63,10 +66,14 @@ export default class GameScene extends Phaser.Scene {
         this.player.body.setBounce(0.2, 0.2);
         
         // Assign role: ONLY 1 KILLER per round, MAX 8 SURVIVORS
-        // If no killer has been assigned yet, 30% chance this player is the killer
+        // 30% chance this player is the killer (if not assigned yet)
         if (!this.killerAssigned && Math.random() < 0.3) {
             this.role = 'killer';
             this.killerAssigned = true;
+            
+            // Show killer selection UI
+            this.showKillerSelectionUI();
+            
             const killerColor = 0xff0000; // Red
             this.player.setFillStyle(killerColor);
         } else if (this.survivorCount < this.maxSurvivors) {
@@ -74,7 +81,7 @@ export default class GameScene extends Phaser.Scene {
             this.role = 'survivor';
             this.survivorCount++;
             
-            // Assign survivor class randomly: Shedletsky, Elliot, or Noob
+            // Assign survivor class: Shedletsky, Elliot, or Noob
             const classes = ['shedletsky', 'elliot', 'noob'];
             this.survivorClass = classes[Math.floor(Math.random() * classes.length)];
             this.survivorCounts[this.survivorClass]++;
@@ -94,10 +101,82 @@ export default class GameScene extends Phaser.Scene {
             return;
         }
         
-        const displayRole = this.role === 'killer' ? 'KILLER' : 
+        const displayRole = this.role === 'killer' ? 'KILLER (Select)' : 
                            this.role === 'survivor' ? this.survivorClass.toUpperCase() : 'FULL';
         document.getElementById('playerRole').textContent = displayRole;
         document.getElementById('playerCount').textContent = `${this.survivorCount + (this.killerAssigned ? 1 : 0)}/${this.maxSurvivors + 1}`;
+    }
+
+    showKillerSelectionUI() {
+        this.showKillerSelection = true;
+        
+        // Create selection UI overlay
+        const selectionOverlay = this.add.rectangle(600, 400, 1200, 800, 0x000000, 0.7);
+        selectionOverlay.setDepth(100);
+        
+        // Create title
+        const title = this.add.text(600, 100, 'Select Your Killer', {
+            fontSize: '32px',
+            fill: '#00ff00',
+            align: 'center'
+        });
+        title.setOrigin(0.5);
+        title.setDepth(101);
+        
+        // Create killer selection buttons
+        const buttonWidth = 150;
+        const buttonHeight = 50;
+        const startX = 150;
+        const startY = 250;
+        const spacing = 160;
+        
+        this.killerClasses.forEach((killer, index) => {
+            const row = Math.floor(index / 4);
+            const col = index % 4;
+            const x = startX + col * spacing;
+            const y = startY + row * spacing;
+            
+            // Button background
+            const button = this.add.rectangle(x, y, buttonWidth, buttonHeight, 0xff0000);
+            button.setDepth(101);
+            button.setInteractive({ useHandCursor: true });
+            
+            // Button text
+            const text = this.add.text(x, y, killer, {
+                fontSize: '14px',
+                fill: '#fff',
+                align: 'center'
+            });
+            text.setOrigin(0.5);
+            text.setDepth(102);
+            
+            // Button click event
+            button.on('pointerdown', () => {
+                this.selectKiller(killer, selectionOverlay, title);
+            });
+            
+            // Hover effect
+            button.on('pointerover', () => {
+                button.setFillStyle(0xff6666);
+            });
+            
+            button.on('pointerout', () => {
+                button.setFillStyle(0xff0000);
+            });
+        });
+    }
+
+    selectKiller(killerName, overlay, title) {
+        this.killerClass = killerName;
+        
+        // Remove UI elements
+        overlay.destroy();
+        title.destroy();
+        
+        this.showKillerSelection = false;
+        
+        // Update UI
+        document.getElementById('playerRole').textContent = killerName.toUpperCase();
     }
 
     setupControls() {
@@ -132,20 +211,21 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // Method to assign role from server during multiplayer
-    assignRole(role, survivorClass = null) {
+    assignRole(role, className = null) {
         this.role = role;
         if (role === 'killer') {
-            this.player.setFillStyle(0xff0000);
-            document.getElementById('playerRole').textContent = 'KILLER';
+            this.killerClass = className;
+            this.player.setFillStyle(0xff0000); // Red
+            document.getElementById('playerRole').textContent = className.toUpperCase();
         } else {
-            this.survivorClass = survivorClass;
+            this.survivorClass = className;
             const classColors = {
                 'shedletsky': 0x00ff00,  // Green
                 'elliot': 0x00aaff,     // Light blue
                 'noob': 0xffaa00        // Orange
             };
-            this.player.setFillStyle(classColors[survivorClass]);
-            document.getElementById('playerRole').textContent = survivorClass.toUpperCase();
+            this.player.setFillStyle(classColors[className]);
+            document.getElementById('playerRole').textContent = className.toUpperCase();
         }
     }
 }
