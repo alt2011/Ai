@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { mapData } from '../maps/mapData.js';
+import { MapRenderer } from '../maps/mapRenderer.js';
 
 export default class GameScene extends Phaser.Scene {
     constructor() {
@@ -14,6 +16,11 @@ export default class GameScene extends Phaser.Scene {
         this.survivorCounts = { 'shedletsky': 0, 'elliot': 0, 'noob': 0 }; // Track each survivor type
         this.killerClasses = ['Slasher', 'C00lkidd', 'John Doe', 'Noli', '1x1x1x1', 'Guest666', 'Nosferatu']; // 7 selectable killers
         this.showKillerSelection = false; // Flag to show killer selection UI
+        
+        // Map system
+        this.currentMap = null;
+        this.mapRenderer = null;
+        this.mapNames = Object.keys(mapData);
     }
 
     preload() {
@@ -21,8 +28,12 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
-        // Create world/arena
-        this.createArena();
+        // Select random map for this round
+        this.selectRandomMap();
+        
+        // Render the map
+        this.mapRenderer = new MapRenderer(this);
+        this.mapRenderer.renderMap(this.currentMap);
         
         // Create player placeholder and assign role
         this.createPlayer();
@@ -33,8 +44,8 @@ export default class GameScene extends Phaser.Scene {
         // Setup physics
         this.physics.world.setBounds(0, 0, 1200, 800);
         
-        // Update UI
-        document.getElementById('gameStatus').textContent = 'Game started';
+        // Update UI with map name
+        document.getElementById('gameStatus').textContent = `Map: ${this.currentMap.name} | Game started`;
     }
 
     update() {
@@ -44,41 +55,36 @@ export default class GameScene extends Phaser.Scene {
         }
     }
 
-    createArena() {
-        // Draw a simple arena boundary
-        const graphics = this.make.graphics({ x: 0, y: 0 }, false);
-        graphics.lineStyle(3, 0x00ff00, 1);
-        graphics.strokeRect(10, 10, 1180, 780);
-        
-        // Add a grid or background
-        const bg = this.add.rectangle(600, 400, 1200, 800, 0x001a00);
-        bg.setDepth(-1);
+    selectRandomMap() {
+        // Pick a random map from the available maps
+        const randomMapKey = this.mapNames[Math.floor(Math.random() * this.mapNames.length)];
+        this.currentMap = mapData[randomMapKey];
     }
 
     createPlayer() {
-        // Create a placeholder player circle
-        this.player = this.add.circle(600, 400, 15, 0x00ff00);
-        this.player.setDepth(10);
-        
-        // Add physics body
-        this.physics.world.enable(this.player);
-        this.player.body.setCollideWorldBounds(true);
-        this.player.body.setBounce(0.2, 0.2);
-        
+        // Get spawn position based on role
+        let spawnX = 600;
+        let spawnY = 400;
+
         // Assign role: ONLY 1 KILLER per round, MAX 8 SURVIVORS
         // 30% chance this player is the killer (if not assigned yet)
         if (!this.killerAssigned && Math.random() < 0.3) {
             this.role = 'killer';
             this.killerAssigned = true;
+            spawnX = this.currentMap.killerSpawn.x;
+            spawnY = this.currentMap.killerSpawn.y;
             
             // Show killer selection UI
             this.showKillerSelectionUI();
             
             const killerColor = 0xff0000; // Red
-            this.player.setFillStyle(killerColor);
+            this.player = this.add.circle(spawnX, spawnY, 15, killerColor);
         } else if (this.survivorCount < this.maxSurvivors) {
             // Add survivor only if we haven't reached max survivors (8)
             this.role = 'survivor';
+            const spawn = this.currentMap.survivorSpawns[this.survivorCount];
+            spawnX = spawn.x;
+            spawnY = spawn.y;
             this.survivorCount++;
             
             // Assign survivor class: Shedletsky, Elliot, or Noob
@@ -92,14 +98,20 @@ export default class GameScene extends Phaser.Scene {
                 'elliot': 0x00aaff,     // Light blue
                 'noob': 0xffaa00        // Orange
             };
-            this.player.setFillStyle(classColors[this.survivorClass]);
+            this.player = this.add.circle(spawnX, spawnY, 15, classColors[this.survivorClass]);
         } else {
             // Game is full: 1 killer + 8 survivors
             this.role = null;
-            this.player.setFillStyle(0x808080); // Gray (spectator/full)
-            document.getElementById('gameStatus').textContent = 'Game is full';
-            return;
+            this.player = this.add.circle(600, 400, 15, 0x808080);
+            document.getElementById('gameStatus').textContent = `Map: ${this.currentMap.name} | Game is full`;
         }
+
+        this.player.setDepth(10);
+        
+        // Add physics body
+        this.physics.world.enable(this.player);
+        this.player.body.setCollideWorldBounds(true);
+        this.player.body.setBounce(0.2, 0.2);
         
         const displayRole = this.role === 'killer' ? 'KILLER (Select)' : 
                            this.role === 'survivor' ? this.survivorClass.toUpperCase() : 'FULL';
@@ -115,13 +127,23 @@ export default class GameScene extends Phaser.Scene {
         selectionOverlay.setDepth(100);
         
         // Create title
-        const title = this.add.text(600, 100, 'Select Your Killer', {
+        const title = this.add.text(600, 80, 'Select Your Killer', {
             fontSize: '32px',
             fill: '#00ff00',
             align: 'center'
         });
         title.setOrigin(0.5);
         title.setDepth(101);
+
+        // Create map info text
+        const mapInfo = this.add.text(600, 130, `Map: ${this.currentMap.name} - ${this.currentMap.description}`, {
+            fontSize: '14px',
+            fill: '#00ff00',
+            align: 'center',
+            wordWrap: { width: 700 }
+        });
+        mapInfo.setOrigin(0.5);
+        mapInfo.setDepth(101);
         
         // Create killer selection buttons
         const buttonWidth = 150;
@@ -152,7 +174,7 @@ export default class GameScene extends Phaser.Scene {
             
             // Button click event
             button.on('pointerdown', () => {
-                this.selectKiller(killer, selectionOverlay, title);
+                this.selectKiller(killer, selectionOverlay, title, mapInfo);
             });
             
             // Hover effect
@@ -166,12 +188,13 @@ export default class GameScene extends Phaser.Scene {
         });
     }
 
-    selectKiller(killerName, overlay, title) {
+    selectKiller(killerName, overlay, title, mapInfo) {
         this.killerClass = killerName;
         
         // Remove UI elements
         overlay.destroy();
         title.destroy();
+        mapInfo.destroy();
         
         this.showKillerSelection = false;
         
@@ -227,5 +250,20 @@ export default class GameScene extends Phaser.Scene {
             this.player.setFillStyle(classColors[className]);
             document.getElementById('playerRole').textContent = className.toUpperCase();
         }
+    }
+
+    // Get current map data
+    getCurrentMap() {
+        return this.currentMap;
+    }
+
+    // Get map obstacles
+    getObstacles() {
+        return this.mapRenderer.getObstacles();
+    }
+
+    // Get map exits
+    getExits() {
+        return this.mapRenderer.getExits();
     }
 }
