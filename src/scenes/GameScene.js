@@ -16,11 +16,26 @@ export default class GameScene extends Phaser.Scene {
         this.survivorCounts = { 'shedletsky': 0, 'elliot': 0, 'noob': 0 }; // Track each survivor type
         this.killerClasses = ['Slasher', 'C00lkidd', 'John Doe', 'Noli', '1x1x1x1', 'Guest666', 'Nosferatu']; // 7 selectable killers
         this.showKillerSelection = false; // Flag to show killer selection UI
+        this.gameStarted = false; // Track if game has started
+        this.gameOver = false; // Track if game is over
+        this.roundTimer = 300; // 5 minutes per round (in seconds)
+        this.aliveCount = 0; // Track alive survivors
         
         // Map system
         this.currentMap = null;
         this.mapRenderer = null;
         this.mapNames = Object.keys(mapData);
+        
+        // Killer state
+        this.killerPlayer = null;
+        this.killerAttackCooldown = 0;
+        this.killerAttackRange = 50;
+        this.killerAttackDamage = 1;
+        
+        // Survivor tracking
+        this.survivors = []; // Array of survivor objects
+        this.survivorHealth = { 'shedletsky': 100, 'elliot': 100, 'noob': 100 }; // HP per class
+        this.escapeCount = 0; // Survivors who escaped
     }
 
     preload() {
@@ -35,6 +50,9 @@ export default class GameScene extends Phaser.Scene {
         this.mapRenderer = new MapRenderer(this);
         this.mapRenderer.renderMap(this.currentMap);
         
+        // Add collisions between world bounds and obstacles
+        this.setupCollisions();
+        
         // Create player placeholder and assign role
         this.createPlayer();
         
@@ -44,14 +62,42 @@ export default class GameScene extends Phaser.Scene {
         // Setup physics
         this.physics.world.setBounds(0, 0, 1200, 800);
         
+        // Start round timer
+        this.startRoundTimer();
+        
         // Update UI with map name
-        document.getElementById('gameStatus').textContent = `Map: ${this.currentMap.name} | Game started`;
+        document.getElementById('gameStatus').textContent = `Map: ${this.currentMap.name} | Time: ${this.roundTimer}s`;
     }
 
     update() {
         // Game loop - update player positions, handle input, etc.
-        if (this.player && !this.showKillerSelection) {
+        if (this.player && !this.showKillerSelection && !this.gameOver) {
             this.handleMovement();
+        }
+
+        // Killer attack cooldown
+        if (this.killerAttackCooldown > 0) {
+            this.killerAttackCooldown -= 1;
+        }
+
+        // Update game status
+        if (this.role === 'killer' && this.killerClass) {
+            this.updateKillerHUD();
+        } else if (this.role === 'survivor') {
+            this.updateSurvivorHUD();
+        }
+
+        // Check for game over conditions
+        if (this.gameStarted && !this.gameOver) {
+            this.checkGameOverConditions();
+        }
+    }
+
+    setupCollisions() {
+        // Enable collision with obstacles
+        const obstacles = this.mapRenderer.getObstacles();
+        if (obstacles && obstacles.length > 0) {
+            // Will be checked during movement
         }
     }
 
@@ -79,6 +125,7 @@ export default class GameScene extends Phaser.Scene {
             
             const killerColor = 0xff0000; // Red
             this.player = this.add.circle(spawnX, spawnY, 15, killerColor);
+            this.killerPlayer = this.player;
         } else if (this.survivorCount < this.maxSurvivors) {
             // Add survivor only if we haven't reached max survivors (8)
             this.role = 'survivor';
@@ -86,6 +133,7 @@ export default class GameScene extends Phaser.Scene {
             spawnX = spawn.x;
             spawnY = spawn.y;
             this.survivorCount++;
+            this.aliveCount++;
             
             // Assign survivor class: Shedletsky, Elliot, or Noob
             const classes = ['shedletsky', 'elliot', 'noob'];
@@ -99,9 +147,16 @@ export default class GameScene extends Phaser.Scene {
                 'noob': 0xffaa00        // Orange
             };
             this.player = this.add.circle(spawnX, spawnY, 15, classColors[this.survivorClass]);
+            this.survivors.push({
+                sprite: this.player,
+                class: this.survivorClass,
+                health: this.survivorHealth[this.survivorClass],
+                escaped: false,
+                dead: false
+            });
         } else {
             // Game is full: 1 killer + 8 survivors
-            this.role = null;
+            this.role = 'spectator';
             this.player = this.add.circle(600, 400, 15, 0x808080);
             document.getElementById('gameStatus').textContent = `Map: ${this.currentMap.name} | Game is full`;
         }
@@ -114,7 +169,7 @@ export default class GameScene extends Phaser.Scene {
         this.player.body.setBounce(0.2, 0.2);
         
         const displayRole = this.role === 'killer' ? 'KILLER (Select)' : 
-                           this.role === 'survivor' ? this.survivorClass.toUpperCase() : 'FULL';
+                           this.role === 'survivor' ? this.survivorClass.toUpperCase() : 'SPECTATOR';
         document.getElementById('playerRole').textContent = displayRole;
         document.getElementById('playerCount').textContent = `${this.survivorCount + (this.killerAssigned ? 1 : 0)}/${this.maxSurvivors + 1}`;
     }
@@ -197,6 +252,7 @@ export default class GameScene extends Phaser.Scene {
         mapInfo.destroy();
         
         this.showKillerSelection = false;
+        this.gameStarted = true;
         
         // Update UI
         document.getElementById('playerRole').textContent = killerName.toUpperCase();
@@ -209,6 +265,13 @@ export default class GameScene extends Phaser.Scene {
             A: Phaser.Input.Keyboard.KeyCodes.A,
             S: Phaser.Input.Keyboard.KeyCodes.S,
             D: Phaser.Input.Keyboard.KeyCodes.D
+        });
+        
+        // Spacebar for killer attack
+        this.input.keyboard.on('keydown-SPACE', () => {
+            if (this.role === 'killer' && this.gameStarted && !this.gameOver) {
+                this.performKillerAttack();
+            }
         });
     }
 
@@ -231,6 +294,188 @@ export default class GameScene extends Phaser.Scene {
         }
 
         this.player.body.setVelocity(velocityX, velocityY);
+
+        // Check collisions with obstacles
+        this.checkObstacleCollisions();
+        
+        // Check if survivor reached exit
+        if (this.role === 'survivor') {
+            this.checkExitCollisions();
+        }
+    }
+
+    checkObstacleCollisions() {
+        const obstacles = this.mapRenderer.getObstacles();
+        obstacles.forEach(obstacle => {
+            if (Phaser.Geom.Rectangle.Overlaps(
+                this.player.getBounds(),
+                obstacle.getBounds()
+            )) {
+                // Push player back
+                this.player.body.setVelocity(0, 0);
+                this.player.x -= this.player.body.velocity.x * 0.016;
+                this.player.y -= this.player.body.velocity.y * 0.016;
+            }
+        });
+    }
+
+    checkExitCollisions() {
+        const exits = this.mapRenderer.getExits();
+        exits.forEach(exit => {
+            if (Phaser.Geom.Rectangle.Overlaps(
+                this.player.getBounds(),
+                exit.getBounds()
+            )) {
+                this.playerEscaped();
+            }
+        });
+    }
+
+    playerEscaped() {
+        this.escapeCount++;
+        this.aliveCount--;
+        
+        // Find and mark survivor as escaped
+        this.survivors.forEach(survivor => {
+            if (survivor.sprite === this.player) {
+                survivor.escaped = true;
+            }
+        });
+
+        // Update HUD
+        document.getElementById('gameStatus').textContent = `${this.escapeCount} survivor(s) escaped!`;
+        
+        // Fade out player
+        this.tweens.add({
+            targets: this.player,
+            alpha: 0,
+            duration: 500
+        });
+        
+        this.player.body.setVelocity(0, 0);
+    }
+
+    performKillerAttack() {
+        if (this.killerAttackCooldown > 0) {
+            return; // Still in cooldown
+        }
+
+        this.killerAttackCooldown = 60; // 1 second cooldown
+
+        // Check for survivors in range
+        this.survivors.forEach(survivor => {
+            if (!survivor.dead && !survivor.escaped) {
+                const distance = Phaser.Math.Distance.Between(
+                    this.player.x, this.player.y,
+                    survivor.sprite.x, survivor.sprite.y
+                );
+
+                if (distance < this.killerAttackRange) {
+                    this.damageeSurvivor(survivor);
+                }
+            }
+        });
+
+        // Visual feedback
+        this.player.setScale(1.2);
+        this.time.delayedCall(100, () => {
+            this.player.setScale(1);
+        });
+    }
+
+    damageSurvivor(survivor) {
+        survivor.health -= this.killerAttackDamage;
+
+        if (survivor.health <= 0) {
+            this.killSurvivor(survivor);
+        } else {
+            // Flash survivor sprite
+            this.tweens.add({
+                targets: survivor.sprite,
+                alpha: 0.5,
+                duration: 100,
+                yoyo: true,
+                repeat: 2
+            });
+        }
+    }
+
+    killSurvivor(survivor) {
+        survivor.dead = true;
+        this.aliveCount--;
+
+        // Fade out and remove survivor
+        this.tweens.add({
+            targets: survivor.sprite,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => {
+                survivor.sprite.destroy();
+            }
+        });
+    }
+
+    startRoundTimer() {
+        this.time.addEvent({
+            delay: 1000,
+            callback: () => {
+                if (!this.gameOver && this.gameStarted) {
+                    this.roundTimer--;
+                    if (this.roundTimer <= 0) {
+                        this.endRound();
+                    }
+                }
+            },
+            loop: true
+        });
+    }
+
+    checkGameOverConditions() {
+        // All survivors escaped
+        if (this.escapeCount === this.survivorCount) {
+            this.endRound('survivors_escaped');
+        }
+        // All survivors killed
+        else if (this.aliveCount === 0 && this.killerAssigned) {
+            this.endRound('survivors_eliminated');
+        }
+        // Time is up
+        else if (this.roundTimer <= 0) {
+            this.endRound('time_up');
+        }
+    }
+
+    endRound(reason = 'time_up') {
+        this.gameOver = true;
+
+        let result = '';
+        switch (reason) {
+            case 'survivors_escaped':
+                result = 'SURVIVORS WIN! All survivors escaped!';
+                break;
+            case 'survivors_eliminated':
+                result = 'KILLER WINS! All survivors eliminated!';
+                break;
+            case 'time_up':
+                result = `SURVIVORS WIN! Time's up! ${this.escapeCount} escaped, ${this.aliveCount} eliminated.`;
+                break;
+        }
+
+        document.getElementById('gameStatus').textContent = `ROUND OVER: ${result} | Reloading in 5 seconds...`;
+
+        this.time.delayedCall(5000, () => {
+            this.scene.restart();
+        });
+    }
+
+    updateKillerHUD() {
+        const status = `${this.aliveCount} survivor(s) alive | Attack cooldown: ${Math.ceil(this.killerAttackCooldown / 60)}s`;
+        // Could update a separate HUD element if desired
+    }
+
+    updateSurvivorHUD() {
+        const status = `Survivors alive: ${this.aliveCount} | Escaped: ${this.escapeCount}`;
+        // Could update a separate HUD element if desired
     }
 
     // Method to assign role from server during multiplayer
